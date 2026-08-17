@@ -13,6 +13,25 @@ function Write-Step([string]$Message) {
     Write-Host "[discord-proton-refresh] $Message" -ForegroundColor Cyan
 }
 
+function Get-ProtonAppProcesses {
+    Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $_.Path -and
+            $_.Path -like '*\Proton\VPN\*' -and
+            $_.ProcessName -notmatch '(Service|WireGuard|Update|TlsVerify)'
+        }
+        catch {
+            $false
+        }
+    }
+}
+
+function Get-ProtonGuiProcess {
+    Get-ProtonAppProcesses |
+        Where-Object { $_.MainWindowHandle -ne 0 } |
+        Select-Object -First 1
+}
+
 function Get-PublicIp {
     try {
         return (Invoke-RestMethod -Uri 'https://api.ipify.org' -TimeoutSec 10).Trim()
@@ -56,9 +75,7 @@ function Get-ProtonWindow {
 
     $deadline = (Get-Date).AddSeconds($Timeout)
     do {
-        $process = Get-Process -Name 'ProtonVPN' -ErrorAction SilentlyContinue |
-            Where-Object { $_.MainWindowHandle -ne 0 } |
-            Select-Object -First 1
+        $process = Get-ProtonGuiProcess
         if ($process) {
             return [System.Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
         }
@@ -134,7 +151,7 @@ function Refresh-Discord {
 }
 
 function Close-ProtonVpn {
-    $processes = Get-Process -Name 'ProtonVPN' -ErrorAction SilentlyContinue
+    $processes = @(Get-ProtonAppProcesses)
     foreach ($process in $processes) {
         if ($process.MainWindowHandle -ne 0) {
             [void]$process.CloseMainWindow()
@@ -142,15 +159,17 @@ function Close-ProtonVpn {
     }
 
     Start-Sleep -Seconds 3
-    Get-Process -Name 'ProtonVPN' -ErrorAction SilentlyContinue |
-        Stop-Process -Force -ErrorAction SilentlyContinue
+    foreach ($process in $processes) {
+        Get-Process -Id $process.Id -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $originalIp = Get-PublicIp
 $protonExe = Find-ProtonExecutable
 
 Write-Step 'Abrindo o Proton VPN...'
-if (-not (Get-Process -Name 'ProtonVPN' -ErrorAction SilentlyContinue)) {
+if (-not (Get-ProtonAppProcesses)) {
     Start-Process -FilePath $protonExe
 }
 
