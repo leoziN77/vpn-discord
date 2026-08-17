@@ -26,12 +26,6 @@ function Get-ProtonAppProcesses {
     }
 }
 
-function Get-ProtonGuiProcess {
-    Get-ProtonAppProcesses |
-        Where-Object { $_.MainWindowHandle -ne 0 } |
-        Select-Object -First 1
-}
-
 function Get-PublicIp {
     try {
         return (Invoke-RestMethod -Uri 'https://api.ipify.org' -TimeoutSec 10).Trim()
@@ -67,56 +61,6 @@ function Find-ProtonExecutable {
     throw 'O executavel do Proton VPN nao foi encontrado. Instale ou abra o aplicativo oficial do Proton VPN.'
 }
 
-function Get-ProtonWindow {
-    param([int]$Timeout)
-
-    Add-Type -AssemblyName UIAutomationClient
-    Add-Type -AssemblyName UIAutomationTypes
-
-    $deadline = (Get-Date).AddSeconds($Timeout)
-    do {
-        $process = Get-ProtonGuiProcess
-        if ($process) {
-            return [System.Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
-        }
-        Start-Sleep -Milliseconds 500
-    } while ((Get-Date) -lt $deadline)
-
-    throw 'A janela do Proton VPN nao ficou disponivel. Abra o aplicativo e tente novamente.'
-}
-
-function Invoke-ProtonButton {
-    param(
-        [System.Windows.Automation.AutomationElement]$Window,
-        [string[]]$Names
-    )
-
-    $buttons = $Window.FindAll(
-        [System.Windows.Automation.TreeScope]::Descendants,
-        [System.Windows.Automation.Condition]::TrueCondition
-    )
-
-    foreach ($element in $buttons) {
-        $name = $element.Current.Name
-        if (-not $name) { continue }
-
-        foreach ($candidate in $Names) {
-            if ($name -match $candidate) {
-                $pattern = $null
-                if ($element.TryGetCurrentPattern(
-                    [System.Windows.Automation.InvokePattern]::Pattern,
-                    [ref]$pattern
-                )) {
-                    $pattern.Invoke()
-                    return $name
-                }
-            }
-        }
-    }
-
-    throw "Botao nao encontrado no Proton VPN: $($Names -join ', '). Atualize o script se o texto da interface mudou."
-}
-
 function Wait-ForIpChange {
     param(
         [AllowNull()][string]$PreviousIp,
@@ -148,17 +92,24 @@ function Refresh-Discord {
     }
     Start-Sleep -Milliseconds 500
     $shell.SendKeys('^r')
+
+    # O Discord/Electron leva alguns segundos para reconstruir a janela.
+    Start-Sleep -Seconds $RefreshDelaySeconds
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $ready = Get-Process -Name 'Discord' -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne 0 -and $_.Responding } |
+            Select-Object -First 1
+        if ($ready) { return }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+
+    throw 'O Discord nao voltou a responder dentro do tempo limite.'
 }
 
 function Close-ProtonVpn {
     $processes = @(Get-ProtonAppProcesses)
-    foreach ($process in $processes) {
-        if ($process.MainWindowHandle -ne 0) {
-            [void]$process.CloseMainWindow()
-        }
-    }
-
-    Start-Sleep -Seconds 3
     foreach ($process in $processes) {
         Get-Process -Id $process.Id -ErrorAction SilentlyContinue |
             Stop-Process -Force -ErrorAction SilentlyContinue
@@ -166,42 +117,24 @@ function Close-ProtonVpn {
 }
 
 $originalIp = Get-PublicIp
+if (-not $originalIp) {
+    throw 'Nao foi possivel consultar o IP publico antes de abrir a VPN.'
+}
 $protonExe = Find-ProtonExecutable
 
 Write-Step 'Abrindo o Proton VPN...'
 if (-not (Get-ProtonAppProcesses)) {
-    Start-Process -FilePath $protonExe
+    Start-Process -FilePath $protonExe -WindowStyle Minimized
 }
 
-$window = Get-ProtonWindow -Timeout $TimeoutSeconds
-
-Write-Step 'Conectando a VPN...'
-$connectNames = @(
-    '^(Quick connect|Connect|Conectar|Conex[aã]o r[aá]pida)$',
-    '^(Fastest|Mais r[aá]pido)$'
-)
-$clicked = Invoke-ProtonButton -Window $window -Names $connectNames
-Write-Step "Botao acionado: $clicked"
+Write-Step 'Aguardando a conexao automatica da VPN...'
 $vpnIp = Wait-ForIpChange -PreviousIp $originalIp -Timeout $TimeoutSeconds
 Write-Step "VPN confirmada (IP: $vpnIp)."
 
 Write-Step 'Atualizando o Discord com Ctrl+R...'
 Refresh-Discord
-Start-Sleep -Seconds $RefreshDelaySeconds
+Write-Step 'Discord voltou a responder.'
 
-Write-Step 'Desconectando a VPN...'
-$window = Get-ProtonWindow -Timeout 10
-$disconnectNames = @('^(Disconnect|Desconectar)$')
-$clicked = Invoke-ProtonButton -Window $window -Names $disconnectNames
-Write-Step "Botao acionado: $clicked"
-
-if ($originalIp) {
-    [void](Wait-ForIpChange -PreviousIp $vpnIp -Timeout $TimeoutSeconds)
-}
-else {
-    Start-Sleep -Seconds 5
-}
-
-Write-Step 'Fechando completamente o Proton VPN...'
+Write-Step 'Finalizando os processos do Proton VPN...'
 Close-ProtonVpn
 Write-Host 'Concluido.' -ForegroundColor Green
