@@ -17,6 +17,8 @@ Automacao para Windows que:
 - PowerShell 5.1 ou superior;
 - idioma do Proton VPN em portugues ou ingles.
 
+O script reconhece tanto `ProtonVPN.Launcher.exe` (versoes atuais) quanto `ProtonVPN.exe` (instalacoes anteriores).
+
 > O aplicativo oficial do Proton VPN para Windows nao possui uma CLI publica de conexao. O script usa a API de acessibilidade do Windows para acionar os botoes pelo nome, sem coordenadas fixas de mouse.
 
 ## Executar pelo CMD
