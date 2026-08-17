@@ -23,7 +23,7 @@ function Get-PublicIp {
 }
 
 function Find-ProtonExecutable {
-    $running = Get-Process -Name 'ProtonVPN' -ErrorAction SilentlyContinue |
+    $running = Get-Process -Name 'ProtonVPN', 'ProtonVPN.Launcher' -ErrorAction SilentlyContinue |
         Where-Object { $_.Path } |
         Select-Object -First 1
 
@@ -35,14 +35,17 @@ function Find-ProtonExecutable {
         (Join-Path $env:LOCALAPPDATA 'ProtonVPN')
     ) | Where-Object { $_ -and (Test-Path $_) }
 
+    $executableNames = @('ProtonVPN.Launcher.exe', 'ProtonVPN.exe')
     foreach ($root in $roots) {
-        $exe = Get-ChildItem -Path $root -Filter 'ProtonVPN.exe' -File -Recurse -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-        if ($exe) { return $exe.FullName }
+        foreach ($executableName in $executableNames) {
+            $exe = Get-ChildItem -Path $root -Filter $executableName -File -Recurse -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 1
+            if ($exe) { return $exe.FullName }
+        }
     }
 
-    throw 'ProtonVPN.exe nao foi encontrado. Instale ou abra o aplicativo oficial do Proton VPN.'
+    throw 'O executavel do Proton VPN nao foi encontrado. Instale ou abra o aplicativo oficial do Proton VPN.'
 }
 
 function Get-ProtonWindow {
