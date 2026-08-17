@@ -3,11 +3,11 @@
 Automacao para Windows que:
 
 1. abre o aplicativo oficial do Proton VPN;
-2. aciona a conexao rapida;
-3. aguarda a confirmacao da troca do IP publico;
+2. aguarda o perfil do Proton conectar automaticamente;
+3. confirma a troca do IP publico;
 4. ativa o Discord e envia `Ctrl+R`;
-5. desconecta a VPN;
-6. fecha completamente o Proton VPN, inclusive da bandeja.
+5. aguarda o Discord voltar a responder;
+6. finaliza os processos da interface do Proton VPN, desligando a VPN.
 
 ## Requisitos
 
@@ -19,7 +19,7 @@ Automacao para Windows que:
 
 O script reconhece tanto `ProtonVPN.Launcher.exe` (versoes atuais) quanto `ProtonVPN.exe` (instalacoes anteriores).
 
-> O aplicativo oficial do Proton VPN para Windows nao possui uma CLI publica de conexao. O script usa a API de acessibilidade do Windows para acionar os botoes pelo nome, sem coordenadas fixas de mouse.
+> O Proton VPN deve estar configurado para conectar automaticamente quando for aberto. O script nao clica em botoes da interface.
 
 ## Executar pelo CMD
 
@@ -44,14 +44,13 @@ executar -TimeoutSeconds 90 -RefreshDelaySeconds 8
 ## Importante
 
 - Deixe o Discord aberto antes de executar.
-- Deixe o Proton VPN autenticado e desconectado.
+- Deixe o Proton VPN autenticado, fechado e configurado para conexao automatica.
 - O script usa `https://api.ipify.org` apenas para confirmar a troca do IP.
-- Se a Proton alterar os nomes/controles da interface, os seletores em `Invoke-ProtonButton` poderao precisar de ajuste.
-- O encerramento forcado finaliza apenas o processo da interface `ProtonVPN`; o script primeiro solicita o fechamento normal.
+- O encerramento final usa a mesma ideia de "Finalizar tarefa" nos processos da interface do Proton VPN.
 
 ## Solucao de problemas
 
-Se aparecer "botao nao encontrado", confira se o aplicativo esta em portugues ou ingles e se a tela principal esta aberta. Para aumentar o tempo de espera:
+Se a conexao ou o recarregamento demorarem mais, aumente o tempo de espera:
 
 ```cmd
 executar -TimeoutSeconds 120
