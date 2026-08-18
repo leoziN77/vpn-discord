@@ -16,6 +16,7 @@ Automacao para Windows que:
 - Discord desktop aberto;
 - PowerShell 5.1 ou superior;
 - idioma do Proton VPN em portugues ou ingles.
+- aceitar a solicitacao de administrador do Windows ao executar.
 
 O script reconhece tanto `ProtonVPN.Launcher.exe` (versoes atuais) quanto `ProtonVPN.exe` (instalacoes anteriores).
 
@@ -38,7 +39,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File discord-proton-refresh.ps1
 Opcoes:
 
 ```cmd
-executar -TimeoutSeconds 90 -RefreshDelaySeconds 8
+executar -TimeoutSeconds 90 -RefreshDelaySeconds 15
 ```
 
 ## Importante
@@ -47,6 +48,8 @@ executar -TimeoutSeconds 90 -RefreshDelaySeconds 8
 - Deixe o Proton VPN autenticado, fechado e configurado para conexao automatica.
 - O script usa `https://api.ipify.org` apenas para confirmar a troca do IP.
 - Antes de finalizar a interface, o script aciona `Desconectar` e confirma que o IP da VPN saiu. Isso evita deixar filtros de rede ativos e perder a internet.
+- O script espera no minimo 15 segundos apos `Ctrl+R` e exige que o Discord permaneça responsivo por tres verificacoes seguidas.
+- Depois da desconexao confirmada, todos os servicos e processos cujo nome comeca com `Proton` sao encerrados.
 
 ## Solucao de problemas
 
