@@ -46,7 +46,7 @@ executar -TimeoutSeconds 90 -RefreshDelaySeconds 8
 - Deixe o Discord aberto antes de executar.
 - Deixe o Proton VPN autenticado, fechado e configurado para conexao automatica.
 - O script usa `https://api.ipify.org` apenas para confirmar a troca do IP.
-- O encerramento final usa a mesma ideia de "Finalizar tarefa" nos processos da interface do Proton VPN.
+- Antes de finalizar a interface, o script aciona `Desconectar` e confirma que o IP da VPN saiu. Isso evita deixar filtros de rede ativos e perder a internet.
 
 ## Solucao de problemas
 
