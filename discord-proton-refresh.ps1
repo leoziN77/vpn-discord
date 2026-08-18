@@ -3,11 +3,30 @@ param(
     [ValidateRange(10, 180)]
     [int]$TimeoutSeconds = 60,
 
-    [ValidateRange(1, 30)]
-    [int]$RefreshDelaySeconds = 5
+    [ValidateRange(5, 60)]
+    [int]$RefreshDelaySeconds = 15
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+if (-not (Test-IsAdministrator)) {
+    $arguments = @(
+        '-NoLogo',
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', ('"{0}"' -f $PSCommandPath),
+        '-TimeoutSeconds', $TimeoutSeconds,
+        '-RefreshDelaySeconds', $RefreshDelaySeconds
+    )
+    Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $arguments
+    exit 0
+}
 
 function Write-Step([string]$Message) {
     Write-Host "[discord-proton-refresh] $Message" -ForegroundColor Cyan
@@ -93,16 +112,24 @@ function Refresh-Discord {
     Start-Sleep -Milliseconds 500
     $shell.SendKeys('^r')
 
-    # O Discord/Electron leva alguns segundos para reconstruir a janela.
+    # Electron pode continuar com Responding=True durante o reload.
+    # Por isso existe uma espera minima antes da verificacao de estabilidade.
     Start-Sleep -Seconds $RefreshDelaySeconds
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $stableChecks = 0
     do {
         $ready = Get-Process -Name 'Discord' -ErrorAction SilentlyContinue |
             Where-Object { $_.MainWindowHandle -ne 0 -and $_.Responding } |
             Select-Object -First 1
-        if ($ready) { return }
-        Start-Sleep -Milliseconds 500
+        if ($ready) {
+            $stableChecks++
+            if ($stableChecks -ge 3) { return }
+        }
+        else {
+            $stableChecks = 0
+        }
+        Start-Sleep -Seconds 1
     } while ((Get-Date) -lt $deadline)
 
     throw 'O Discord nao voltou a responder dentro do tempo limite.'
@@ -174,20 +201,26 @@ function Close-ProtonVpn {
         throw 'A VPN nao desconectou ou a internet nao voltou dentro do tempo limite.'
     }
 
-    Get-Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.ProcessName -like 'Proton*' -and
-            $_.ProcessName -notmatch '(Service|WireGuard|Update|TlsVerify)'
-        } |
-        Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Service -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like 'Proton*' -or $_.DisplayName -like 'Proton*' } |
+        Stop-Service -Force -ErrorAction SilentlyContinue
 
-    $remaining = @(Get-Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.ProcessName -like 'Proton*' -and
-            $_.ProcessName -notmatch '(Service|WireGuard|Update|TlsVerify)'
-        })
+    $processDeadline = (Get-Date).AddSeconds(10)
+    do {
+        Get-Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProcessName -like 'Proton*' } |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 500
+        $remaining = @(Get-Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProcessName -like 'Proton*' })
+    } while ($remaining.Count -gt 0 -and (Get-Date) -lt $processDeadline)
+
     if ($remaining.Count -gt 0) {
         throw "Ainda existem processos do Proton abertos: $($remaining.ProcessName -join ', ')."
+    }
+
+    if (-not (Get-PublicIp)) {
+        throw 'Os processos do Proton foram encerrados, mas a internet deixou de responder.'
     }
 }
 
