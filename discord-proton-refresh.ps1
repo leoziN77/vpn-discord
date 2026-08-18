@@ -109,10 +109,85 @@ function Refresh-Discord {
 }
 
 function Close-ProtonVpn {
-    $processes = @(Get-ProtonAppProcesses)
-    foreach ($process in $processes) {
-        Get-Process -Id $process.Id -ErrorAction SilentlyContinue |
-            Stop-Process -Force -ErrorAction SilentlyContinue
+    param(
+        [string]$VpnIp,
+        [int]$Timeout,
+        [string]$LauncherPath
+    )
+
+    Add-Type -AssemblyName UIAutomationClient
+    Add-Type -AssemblyName UIAutomationTypes
+
+    Start-Process -FilePath $LauncherPath
+
+    $deadline = (Get-Date).AddSeconds($Timeout)
+    $window = $null
+    do {
+        $gui = Get-Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.MainWindowHandle -ne 0 -and
+                ($_.ProcessName -like 'Proton*' -or ($_.Path -and $_.Path -like '*\Proton\VPN\*'))
+            } |
+            Select-Object -First 1
+        if ($gui) {
+            $window = [System.Windows.Automation.AutomationElement]::FromHandle($gui.MainWindowHandle)
+            break
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+
+    if (-not $window) {
+        throw 'Nao foi possivel abrir a janela do Proton para desconectar com seguranca.'
+    }
+
+    $elements = $window.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition
+    )
+    $disconnected = $false
+    foreach ($element in $elements) {
+        if ($element.Current.Name -match '^(Disconnect|Desconectar)$') {
+            $pattern = $null
+            if ($element.TryGetCurrentPattern(
+                [System.Windows.Automation.InvokePattern]::Pattern,
+                [ref]$pattern
+            )) {
+                $pattern.Invoke()
+                $disconnected = $true
+                break
+            }
+        }
+    }
+
+    if (-not $disconnected) {
+        throw 'O botao Desconectar nao foi encontrado no Proton VPN.'
+    }
+
+    $deadline = (Get-Date).AddSeconds($Timeout)
+    do {
+        $currentIp = Get-PublicIp
+        if ($currentIp -and $currentIp -ne $VpnIp) { break }
+        Start-Sleep -Seconds 2
+    } while ((Get-Date) -lt $deadline)
+
+    if (-not $currentIp -or $currentIp -eq $VpnIp) {
+        throw 'A VPN nao desconectou ou a internet nao voltou dentro do tempo limite.'
+    }
+
+    Get-Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.ProcessName -like 'Proton*' -and
+            $_.ProcessName -notmatch '(Service|WireGuard|Update|TlsVerify)'
+        } |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+
+    $remaining = @(Get-Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.ProcessName -like 'Proton*' -and
+            $_.ProcessName -notmatch '(Service|WireGuard|Update|TlsVerify)'
+        })
+    if ($remaining.Count -gt 0) {
+        throw "Ainda existem processos do Proton abertos: $($remaining.ProcessName -join ', ')."
     }
 }
 
@@ -136,5 +211,6 @@ Refresh-Discord
 Write-Step 'Discord voltou a responder.'
 
 Write-Step 'Finalizando os processos do Proton VPN...'
-Close-ProtonVpn
+Close-ProtonVpn -VpnIp $vpnIp -Timeout $TimeoutSeconds -LauncherPath $protonExe
+Write-Step 'VPN desconectada, internet restaurada e interface do Proton encerrada.'
 Write-Host 'Concluido.' -ForegroundColor Green
